@@ -4,45 +4,31 @@ import java.lang.management.OperatingSystemMXBean;
 
 public class ParallelSimulation {
 
-    // ---- Single parallel run ----
+    // ---- Single run (no internal parallelization, only parallelized across runs in Main) ----
     public static double runOnce(Random rng) throws Exception {
-        // 1. Generate all patients using primitive arrays to avoid object overhead
-        double[] arrivalTimes = new double[Main.NUM_PATIENTS];
-        double[] serviceTimes = new double[Main.NUM_PATIENTS];
-        double t = 0;
-        for (int i = 0; i < Main.NUM_PATIENTS; i++) {
-            t += -Math.log(1 - rng.nextDouble()) / Main.LAMBDA;
-            arrivalTimes[i] = t;
-            serviceTimes[i] = -Math.log(1 - rng.nextDouble()) / Main.MU;
-        }
-
-        // 2. Dispatch: assign each patient to the server that becomes free soonest
-        int[] assignments = new int[Main.NUM_PATIENTS];
         double[] serverFreeAt = new double[Main.NUM_SERVERS];
+        double currentTime    = 0.0;
+        double totalWait      = 0.0;
 
         for (int i = 0; i < Main.NUM_PATIENTS; i++) {
-            int best = 0;
-            for (int s = 1; s < Main.NUM_SERVERS; s++) {
-                if (serverFreeAt[s] < serverFreeAt[best]) best = s;
-            }
-            double start = Math.max(arrivalTimes[i], serverFreeAt[best]);
-            serverFreeAt[best] = start + serviceTimes[i];
-            assignments[i] = best;
-        }
+            currentTime += -Math.log(1 - rng.nextDouble()) / Main.LAMBDA;
 
-        // 3. Process server queues in parallel using common ForkJoinPool
-        double totalWait = java.util.stream.IntStream.range(0, Main.NUM_SERVERS).parallel().mapToDouble(s -> {
-            double serverClock = 0.0;
-            double wait = 0.0;
-            for (int i = 0; i < Main.NUM_PATIENTS; i++) {
-                if (assignments[i] == s) {
-                    double start = Math.max(arrivalTimes[i], serverClock);
-                    wait += start - arrivalTimes[i];
-                    serverClock = start + serviceTimes[i];
+            int    bestServer  = 0;
+            double bestFreeAt  = serverFreeAt[0];
+            for (int s = 1; s < Main.NUM_SERVERS; s++) {
+                if (serverFreeAt[s] < bestFreeAt) {
+                    bestFreeAt = serverFreeAt[s];
+                    bestServer = s;
                 }
             }
-            return wait;
-        }).sum();
+
+            double waitTime = Math.max(0.0, serverFreeAt[bestServer] - currentTime);
+            totalWait += waitTime;
+
+            double serviceStart = Math.max(currentTime, serverFreeAt[bestServer]);
+            double serviceTime  = -Math.log(1 - rng.nextDouble()) / Main.MU;
+            serverFreeAt[bestServer] = serviceStart + serviceTime;
+        }
 
         return totalWait / Main.NUM_PATIENTS;   // avg wait in sim-minutes
     }
