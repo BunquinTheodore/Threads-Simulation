@@ -1,0 +1,28 @@
+=== SIMULATION NOTES ===
+- The simulation is implemented as an M/M/c queue on both frameworks.
+
+- Because queues are inherently impossible to parallelize (events depend on previous events), multiple simulation runs are performed instead, and the results are averaged. These runs execute either sequentially or in parallel.
+
+- Instead of 500 patients, the sample size is adjusted to 150,000 because 500 is too inconsistent to measure.
+
+- Python interpreter is Python 3.14, JVM is Java 21.
+
+- Frameworks used: Python uses `ProcessPoolExecutor` (multiprocessing). Java uses `IntStream.parallel()` (ForkJoinPool threads).
+
+- Performance tools: Python uses `time.perf_counter()` and `psutil` (an external Python library for process monitoring). Java uses `System.nanoTime()` and `ManagementFactory` (which is built directly into the official Java standard library).
+
+
+=== KEY FINDINGS ===
+- RAM/Memory: Because Python's Global Interpreter Lock makes it inherently single-threaded, it uses multiprocessing for parallelism. Java uses lightweight threads. Because Python spawns entirely new OS processes, each loads its own bulky interpreter and uses a ton of RAM (~23MB vs Java's ~0.3MB).
+
+- Speed: Loop iterations are extremely expensive in Python because of dynamic typing; the interpreter must constantly check variable types and object references for every single computation, adding heavy mathematical overhead. Because Java uses static typing and JIT compilation, it compiles frequently accessed instructions (like loops) into pure machine code, making it blazingly fast compared to Python (~23x faster).
+
+- CPU Usage: During parallel execution, Python's multiprocessing averaged around ~6.15% CPU usage per run, while Java's multithreaded approach averaged slightly higher at ~8.45% CPU usage.
+
+
+=== DETAILED PERFORMANCE COMPARISONS ===
+- Python vs Java (Sequential): When comparing baseline single-threaded performance directly, Java is the clear winner. Java's raw mathematical execution is roughly 20x faster per run (~11.5ms vs ~226.5ms), processing over 14.3 million patients per second compared to Python's ~660 thousand. Java also uses almost no memory overhead (~0.035MB) compared to Python's heavy baseline (~23.3MB).
+
+- Python (Sequential vs Parallel): Parallelizing Python resulted in a ~3.0x speedup (total time dropped from ~2267ms to ~764ms). Memory usage remained virtually identical (~23.3MB per process) between the two modes, as this represents the unavoidable baseline memory required just to boot up the Python interpreter.
+
+- Java (Sequential vs Parallel): Parallelizing Java resulted in a 2.2x speedup (total time dropped from ~1275ms to ~580ms). While this is a smaller multiplier than Python's, it occurs because Java's sequential execution is already so extremely fast that the background system overhead of creating and managing threads begins to eat into the parallel gains (a concept known as Amdahl's Law).
